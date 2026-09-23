@@ -118,45 +118,7 @@ const ScrollViewStickyHeader: component(
     },
   );
 
-  const haveReceivedInitialZeroTranslateY = useRef<boolean>(true);
   const translateYDebounceTimer = useRef<?ReturnType<typeof setTimeout>>(null);
-
-  useEffect(() => {
-    if (translateY !== 0 && translateY != null) {
-      haveReceivedInitialZeroTranslateY.current = false;
-    }
-  }, [translateY]);
-
-  // This is called whenever the (Interpolated) Animated Value
-  // updates, which is several times per frame during scrolling.
-  // To ensure that the Fabric ShadowTree has the most recent
-  // translate style of this node, we debounce the value and then
-  // pass it through to the underlying node during render.
-  // This is:
-  // 1. Only an issue in Fabric.
-  // 2. Worse in Android than iOS. In Android, but not iOS, you
-  //    can touch and move your finger slightly and still trigger
-  //    a "tap" event. In iOS, moving will cancel the tap in
-  //    both Fabric and non-Fabric. On Android when you move
-  //    your finger, the hit-detection moves from the Android
-  //    platform to JS, so we need the ShadowTree to have knowledge
-  //    of the current position.
-  const animatedValueListener = useCallback(({value}: $FlowFixMe) => {
-    const debounceTimeout: number = Platform.OS === 'android' ? 15 : 64;
-    // When the AnimatedInterpolation is recreated, it always initializes
-    // to a value of zero and emits a value change of 0 to its listeners.
-    if (value === 0 && !haveReceivedInitialZeroTranslateY.current) {
-      haveReceivedInitialZeroTranslateY.current = true;
-      return;
-    }
-    if (translateYDebounceTimer.current != null) {
-      clearTimeout(translateYDebounceTimer.current);
-    }
-    translateYDebounceTimer.current = setTimeout(
-      () => setTranslateY(value),
-      debounceTimeout,
-    );
-  }, []);
 
   useEffect(() => {
     const inputRange: Array<number> = [-1, 0];
@@ -233,6 +195,30 @@ const ScrollViewStickyHeader: component(
       newAnimatedTranslateY = Animated.add(newAnimatedTranslateY, offset);
     }
 
+    // The interpolation emits a zero when it is first created. Ignore only
+    // that initial value; a later zero is the actual position when the header
+    // returns from its sticky position.
+    let isInitialValue = true;
+    // Keep the Fabric ShadowTree's transform in sync with the native animation
+    // for hit testing and measurement. Debounce updates while scrolling to
+    // avoid rendering on every frame.
+    const animatedValueListener = ({value}: {value: number}) => {
+      if (isInitialValue) {
+        isInitialValue = false;
+        if (value === 0) {
+          return;
+        }
+      }
+      const debounceTimeout: number = Platform.OS === 'android' ? 15 : 64;
+      if (translateYDebounceTimer.current != null) {
+        clearTimeout(translateYDebounceTimer.current);
+      }
+      translateYDebounceTimer.current = setTimeout(
+        () => setTranslateY(value),
+        debounceTimeout,
+      );
+    };
+
     // add the event listener
     let animatedListenerId;
     if (isFabric) {
@@ -261,7 +247,6 @@ const ScrollViewStickyHeader: component(
     scrollAnimatedValue,
     inverted,
     offset,
-    animatedValueListener,
     isFabric,
   ]);
 
