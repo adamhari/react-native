@@ -8,6 +8,7 @@
  * @format
  */
 
+import NativeAnimatedHelper from '../../../../src/private/animated/NativeAnimatedHelper';
 import Animated from '../../../Animated/Animated';
 import View from '../../View/View';
 import ScrollViewStickyHeader from '../ScrollViewStickyHeader';
@@ -32,8 +33,10 @@ describe('ScrollViewStickyHeader', () => {
     jest.useRealTimers();
   });
 
-  it('updates its Fabric transform when a sticky header returns to its layout position', async () => {
-    const scrollAnimatedValue = new Animated.Value(0);
+  it('updates its Fabric transform while sticky and after returning to its layout position', async () => {
+    const scrollAnimatedValue = new Animated.Value(0, {
+      useNativeDriver: true,
+    });
     let renderer;
 
     await TestRenderer.act(async () => {
@@ -66,8 +69,24 @@ describe('ScrollViewStickyHeader', () => {
       });
     });
 
+    const animatedHeader = nullthrows(
+      nullthrows(renderer)
+        .root.findAllByProps({nativeID: 'sticky-header'})
+        .find(node => Array.isArray(node.props.style)),
+    );
+    const animatedTranslateY =
+      animatedHeader.props.style[2].transform[0].translateY;
+    const animatedTag = animatedTranslateY.__getNativeTag();
+    const emitNativeTranslation = (value: number) => {
+      NativeAnimatedHelper.nativeEventEmitter.emit('onAnimatedValueUpdate', {
+        tag: animatedTag,
+        value,
+      });
+    };
+
     await TestRenderer.act(async () => {
-      scrollAnimatedValue.setValue(150);
+      emitNativeTranslation(0);
+      emitNativeTranslation(50);
       jest.advanceTimersByTime(65);
     });
     expect(header().props.style).toEqual(
@@ -77,7 +96,7 @@ describe('ScrollViewStickyHeader', () => {
     );
 
     await TestRenderer.act(async () => {
-      scrollAnimatedValue.setValue(0);
+      emitNativeTranslation(0);
       jest.advanceTimersByTime(65);
     });
     expect(header().props.style).toEqual(
